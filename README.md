@@ -44,6 +44,8 @@ Design choices worth noting:
 
 ```
 src/skill_scanner/agent.py   the agent, tool, Verdict model and CLI
+src/skill_scanner/server.py  FastAPI app: POST /api/scan and the web UI
+src/skill_scanner/static/    the single-page frontend
 skills/benign/               sample skills that are safe
 skills/malicious/            sample skills that are not (harmless: inert text, unresolvable URLs)
 ```
@@ -59,6 +61,14 @@ uv sync
 cp .env.example .env   # then fill in the values below
 uv run python -m skill_scanner.agent skills/benign/commit-message-writer/SKILL.md
 ```
+
+### Web UI
+
+```bash
+uv run uvicorn skill_scanner.server:app --reload
+```
+
+Open http://localhost:8000 and drop a skill folder onto the page. The result shows the verdict, a confidence meter, the reasoning and the quoted evidence. Only `SKILL.md` is uploaded and scanned; other files in the folder are ignored for now.
 
 Environment variables (in `.env`):
 

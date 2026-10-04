@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skill Scanner</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #14181f; --muted: #626b7a; --border: #e2e5ea;
+    --accent: #3b5bdb;
+    --bad: #c92a2a; --bad-bg: #fff0f0; --bad-border: #f5c2c2;
+    --good: #2b8a3e; --good-bg: #eefaf0; --good-border: #b9e4c2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1218; --card: #181c25; --text: #e8eaf0; --muted: #99a1b1; --border: #2a303c;
+      --accent: #7c93ff;
+      --bad: #ff6b6b; --bad-bg: #2a1517; --bad-border: #5c2a2e;
+      --good: #51cf66; --good-bg: #13241a; --good-border: #25492f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 80px; }
+  h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 24px; }
+  #drop { border: 2px dashed var(--border); border-radius: 14px; padding: 44px 20px; text-align: center;
+          cursor: pointer; transition: border-color .15s, background .15s; background: var(--card); }
+  #drop:hover, #drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--card)); }
+  #drop strong { display: block; font-size: 18px; margin-bottom: 4px; }
+  #drop span { color: var(--muted); font-size: 14px; }
+  #error { color: var(--bad); background: var(--bad-bg); border: 1px solid var(--bad-border);
+           border-radius: 10px; padding: 12px 16px; margin-top: 16px; }
+  .hidden { display: none !important; }
+
+  #loading { text-align: center; padding: 40px 20px; }
+  .spinner { width: 36px; height: 36px; margin: 0 auto 16px; border-radius: 50%;
+             border: 3px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading small { color: var(--muted); }
+
+  .verdict { border-radius: 14px; padding: 24px; border: 1px solid; display: flex; gap: 18px; align-items: center; }
+  .verdict.malicious { background: var(--bad-bg); border-color: var(--bad-border); color: var(--bad); }
+  .verdict.benign { background: var(--good-bg); border-color: var(--good-border); color: var(--good); }
+  .icon { font-size: 40px; line-height: 1; }
+  .verdict h2 { margin: 0; font-size: 26px; letter-spacing: .02em; text-transform: uppercase; }
+  .verdict p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+
+  .meter { margin-top: 20px; }
+  .meter-row { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+  .bar { height: 10px; background: var(--border); border-radius: 99px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 99px; width: 0; transition: width .6s ease; }
+  .malicious .fill { background: var(--bad); } .benign .fill { background: var(--good); }
+
+  h3 { margin: 28px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .reasoning { margin: 0; }
+  ul.evidence { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  ul.evidence li { border-left: 3px solid var(--border); background: var(--bg); padding: 10px 14px;
+                   border-radius: 0 8px 8px 0; font: 13.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word; }
+  .malicious ul.evidence li { border-left-color: var(--bad); } .benign ul.evidence li { border-left-color: var(--good); }
+  .note { color: var(--muted); font-size: 13px; margin-top: 20px; }
+  button { margin-top: 24px; font: inherit; padding: 10px 18px; border-radius: 10px; cursor: pointer;
+           border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  button:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Skill Scanner</h1>
+  <p class="sub">Drop an agent skill folder. An AI agent reads its <code>SKILL.md</code> and decides whether it is malicious or benign.</p>
+
+  <div id="drop" tabindex="0">
+    <strong>Drop a skill folder here</strong>
+    <span>or click to choose one &middot; only <code>SKILL.md</code> is scanned for now</span>
+    <input id="picker" type="file" webkitdirectory hidden>
+  </div>
+  <div id="error" class="hidden"></div>
+
+  <div id="loading" class="card hidden">
+    <div class="spinner"></div>
+    <div>Scanning <b id="scanning-name"></b>&hellip;</div>
+    <small>The agent is reading the skill and reasoning about it. This takes 10&ndash;30 seconds.</small>
+  </div>
+
+  <section id="result" class="hidden">
+    <div id="result-card" class="card">
+      <div id="verdict" class="verdict">
+        <div class="icon" id="icon"></div>
+        <div><h2 id="verdict-text"></h2><p id="skill-name"></p></div>
+      </div>
+      <div id="meter" class="meter">
+        <div class="meter-row"><span>Confidence</span><span id="conf-pct"></span></div>
+        <div class="bar"><div class="fill" id="fill"></div></div>
+      </div>
+      <h3>Reasoning</h3>
+      <p class="reasoning" id="reasoning"></p>
+      <h3>Evidence</h3>
+      <ul class="evidence" id="evidence"></ul>
+      <p class="note" id="ignored-note"></p>
+    </div>
+    <button id="again">Scan another skill</button>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const drop = $("drop"), picker = $("picker");
+
+// Show one of: drop / loading / result.
+function show(view) {
+  $("drop").classList.toggle("hidden", view !== "drop");
+  $("loading").classList.toggle("hidden", view !== "loading");
+  $("result").classList.toggle("hidden", view !== "result");
+}
+function showError(msg) {
+  $("error").textContent = msg;
+  $("error").classList.remove("hidden");
+}
+
+// Pick the shallowest SKILL.md from a list of {path, file} entries.
+function findSkill(entries) {
+  const skills = entries.filter(e => e.path.split("/").pop() === "SKILL.md")
+                        .sort((a, b) => a.path.split("/").length - b.path.split("/").length);
+  return skills[0];
+}
+
+async function handleEntries(entries) {
+  $("error").classList.add("hidden");
+  const skill = findSkill(entries);
+  if (!skill) return showError("No SKILL.md found in that folder.");
+  const parts = skill.path.split("/");
+  const name = parts.length > 1 ? parts[parts.length - 2] : parts[0].replace(/\.md$/i, "");
+  const form = new FormData();
+  form.append("skill_md", skill.file, "SKILL.md");
+  form.append("skill_name", name);
+  form.append("ignored_files", entries.length - 1);
+
+  $("scanning-name").textContent = name;
+  show("loading");
+  try {
+    const res = await fetch("/api/scan", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    render(data);
+  } catch (e) {
+    show("drop");
+    showError(e.message);
+  }
+}
+
+function render(d) {
+  const bad = d.verdict === "malicious";
+  $("verdict").className = "verdict " + d.verdict;
+  $("meter").className = "meter " + d.verdict;
+  $("evidence").className = "evidence " + d.verdict;
+  $("icon").textContent = bad ? "⚠️" : "✅";
+  $("verdict-text").textContent = d.verdict;
+  $("skill-name").textContent = d.skill_name;
+  const pct = Math.round(d.confidence * 100);
+  $("conf-pct").textContent = pct + "%";
+  $("reasoning").textContent = d.reasoning;
+  $("evidence").replaceChildren(...d.evidence.map(q => {
+    const li = document.createElement("li");
+    li.textContent = q;       // textContent: skill text is untrusted, never inject as HTML
+    return li;
+  }));
+  $("ignored-note").textContent = d.ignored_files > 0
+    ? `${d.ignored_files} other file(s) in the folder were not scanned. Only SKILL.md is supported so far.` : "";
+  show("result");
+  $("fill").style.width = "0";
+  requestAnimationFrame(() => requestAnimationFrame(() => $("fill").style.width = pct + "%"));
+}
+
+// Folder chosen via the file picker.
+picker.addEventListener("change", () => {
+  const entries = [...picker.files].map(f => ({ path: f.webkitRelativePath || f.name, file: f }));
+  picker.value = "";
+  if (entries.length) handleEntries(entries);
+});
+drop.addEventListener("click", () => picker.click());
+drop.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") picker.click(); });
+
+// Folder dropped: walk the directory tree with the entries API.
+const readAll = reader => new Promise((res, rej) => {
+  const out = [];
+  (function next() { reader.readEntries(b => b.length ? (out.push(...b), next()) : res(out), rej); })();
+});
+async function walk(entry, prefix = "") {
+  if (entry.isFile) {
+    const file = await new Promise((res, rej) => entry.file(res, rej));
+    return [{ path: prefix + entry.name, file }];
+  }
+  const children = await readAll(entry.createReader());
+  return (await Promise.all(children.map(c => walk(c, prefix + entry.name + "/")))).flat();
+}
+["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", async e => {
+  const items = [...e.dataTransfer.items].map(i => i.webkitGetAsEntry()).filter(Boolean);
+  const entries = (await Promise.all(items.map(i => walk(i)))).flat();
+  if (entries.length) handleEntries(entries);
+});
+
+$("again").addEventListener("click", () => show("drop"));
+</script>
+</body>
+</html>
