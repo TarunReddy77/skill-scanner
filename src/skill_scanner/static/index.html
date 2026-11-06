@@ -163,7 +163,7 @@ function render(d) {
   $("reasoning").textContent = d.reasoning;
   $("evidence").replaceChildren(...d.evidence.map(q => {
     const li = document.createElement("li");
-    li.textContent = q;       // textContent: skill text is untrusted, never inject as HTML
+    li.textContent = `${q.file}:${q.line}  ${q.quote}`;   // textContent: skill text is untrusted, never inject as HTML
     return li;
   }));
   $("ignored-note").textContent = d.ignored_files > 0
