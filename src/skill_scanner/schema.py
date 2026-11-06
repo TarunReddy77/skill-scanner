@@ -27,7 +27,8 @@ class Verdict(BaseModel):
 
     verdict: Literal["malicious", "benign"] = Field(description="Final classification of the skill")
     category: Category | None = Field(
-        description="Primary attack category if malicious, otherwise null",
+        default=None,
+        description="Primary attack category if malicious. Leave out if benign.",
     )
     confidence: float = Field(ge=0, le=1, description="Confidence in the verdict, from 0 to 1")
     evidence: list[Evidence] = Field(description="Where in the skill the verdict comes from")

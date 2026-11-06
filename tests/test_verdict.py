@@ -4,6 +4,13 @@ from pydantic import ValidationError
 from skill_scanner.schema import Verdict
 
 
+def test_benign_verdict_may_leave_the_category_out_entirely():
+    # Models often omit a null field instead of writing null, so leaving it out must be accepted.
+    verdict = Verdict(verdict="benign", confidence=0.9, evidence=[], reasoning="Formats commit messages.")
+
+    assert verdict.category is None
+
+
 def test_malicious_verdict_without_a_category_is_rejected():
     with pytest.raises(ValidationError):
         Verdict(
