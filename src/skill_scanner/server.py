@@ -6,6 +6,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from skill_scanner.agent import scan_skill
+from skill_scanner.scanner import scan as run_scan
 
 MAX_SKILL_BYTES = 200_000
 STATIC_DIR = Path(__file__).parent / "static"
@@ -24,7 +25,7 @@ def scan(
     skill_name: str = Form("skill"),
     ignored_files: int = Form(0),
 ) -> dict:
-    """Scan one uploaded SKILL.md. Only SKILL.md is read; other files in the folder are ignored."""
+    """Scan one uploaded SKILL.md. The page sends only SKILL.md for now, so other files in the folder are NOT scanned."""
     content = skill_md.file.read(MAX_SKILL_BYTES + 1)
     if len(content) > MAX_SKILL_BYTES:
         raise HTTPException(413, f"SKILL.md is larger than {MAX_SKILL_BYTES // 1000} KB")
@@ -40,8 +41,10 @@ def scan(
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_bytes(content)
         try:
-            verdict = scan_skill(str(skill_dir / "SKILL.md"))
+            result = run_scan(str(skill_dir), analyze=scan_skill)
         except Exception as e:
             raise HTTPException(500, f"Scan failed: {type(e).__name__}: {e}")
 
-    return {"skill_name": safe_name, "ignored_files": ignored_files, **verdict.model_dump()}
+    # Flat verdict fields stay for the page; status and error tell it when a skill could not be scanned.
+    verdict = result.verdict.model_dump() if result.verdict else {}
+    return {"skill_name": safe_name, "ignored_files": ignored_files, "status": result.status, "error": result.error, **verdict}

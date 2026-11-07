@@ -151,6 +151,10 @@ async function handleEntries(entries) {
 }
 
 function render(d) {
+  if (d.status === "unscannable") {
+    show("drop");
+    return showError("This skill could not be scanned, so it is NOT marked safe: " + d.error);
+  }
   const bad = d.verdict === "malicious";
   $("verdict").className = "verdict " + d.verdict;
   $("meter").className = "meter " + d.verdict;
