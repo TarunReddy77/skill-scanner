@@ -1,7 +1,12 @@
 """Core scan logic. The model is passed in as a plain function, so nothing here depends on the agent framework."""
 
+import contextvars
+import os
+import threading
 from collections.abc import Callable
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from skill_scanner.schema import ScanResult, Verdict
 
@@ -12,6 +17,22 @@ class Unscannable(Exception):
 
 MAX_FILE_BYTES = 100 * 1024
 MAX_FOLDER_BYTES = 500 * 1024
+DEFAULT_TIME_LIMIT_SECONDS = 120.0
+DEFAULT_MAX_MODEL_CALLS = 20
+
+
+class ModelCallBudget:
+    """Counts model calls for one scan. The agent loop calls `use()` before each call, so a loop that keeps
+    retrying a rejected answer is stopped instead of running up the bill."""
+
+    def __init__(self, max_calls: int | None = None) -> None:
+        self.max_calls = max_calls or int(os.getenv("SCANNER_MAX_MODEL_CALLS") or DEFAULT_MAX_MODEL_CALLS)
+        self.used = 0
+
+    def use(self) -> None:
+        if self.used >= self.max_calls:
+            raise Unscannable(f"scan hit the model call limit of {self.max_calls} calls")
+        self.used += 1
 
 
 def is_junk(relative: Path) -> bool:
@@ -55,7 +76,31 @@ def _check_contents(folder: Path) -> None:
         raise Unscannable(f"skill folder too large to be scanned: {total} bytes, limit {MAX_FOLDER_BYTES}")
 
 
-def scan(path: str, analyze: Callable[[str], Verdict]) -> ScanResult:
+def _run_with_time_limit(analyze: Callable[[str], Verdict], folder: str, seconds: float) -> Verdict:
+    """Run `analyze` in a background thread and stop waiting after `seconds`.
+
+    Python cannot kill a running thread. A stuck call is abandoned (a daemon thread, so it cannot block exit);
+    the cap on model calls is what stops the spending. Errors from `analyze` are raised here, as if called directly.
+    """
+    outcome: dict = {}
+
+    def work() -> None:
+        try:
+            outcome["verdict"] = analyze(folder)
+        except BaseException as error:  # handed back to the caller below
+            outcome["error"] = error
+
+    thread = threading.Thread(target=contextvars.copy_context().run, args=(work,), daemon=True)
+    thread.start()
+    thread.join(seconds)
+    if thread.is_alive():
+        raise Unscannable(f"scan hit the time limit of {seconds:g} seconds")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["verdict"]
+
+
+def scan(path: str, analyze: Callable[[str], Verdict], time_limit_seconds: float | None = None) -> ScanResult:
     """Scan one skill. `analyze` is the model: it takes the skill path and returns a Verdict.
 
     If `analyze` raises Unscannable, the result is marked unscannable. It is never reported as benign.
@@ -63,6 +108,9 @@ def scan(path: str, analyze: Callable[[str], Verdict]) -> ScanResult:
     folder = Path(path).parent if Path(path).name == "SKILL.md" else Path(path)
     try:
         check_folder(folder)
-        return ScanResult(status="scanned", verdict=analyze(str(folder)))
+        seconds = time_limit_seconds or float(os.getenv("SCANNER_TIME_LIMIT_SECONDS") or DEFAULT_TIME_LIMIT_SECONDS)
+        return ScanResult(status="scanned", verdict=_run_with_time_limit(analyze, str(folder), seconds))
     except Unscannable as reason:
         return ScanResult(status="unscannable", error=str(reason))
+    except ValidationError as problem:
+        return ScanResult(status="unscannable", error=f"the model gave an invalid answer: {problem.error_count()} problem(s)")

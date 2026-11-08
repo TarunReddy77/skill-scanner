@@ -63,7 +63,7 @@ Milestone 1 builds the folder scanner and a public labeled benchmark. The full p
 
 - [x] New verdict format (category, `{file, line, quote}` evidence, `unscannable` status)
 - [x] Scan a whole folder with the safe read tools
-- [ ] Time limit and retry cap for each scan
+- [x] Time limit and model-call cap for each scan (a stuck or retry-looping scan ends as unscannable)
 - [ ] Benchmark data layout: labeled skills, neutral IDs, dev/test split
 - [ ] Sandbox for scanning real malicious samples (no network, read-only, no credentials)
 - [ ] Benign and malicious benchmark skills, labeled by a jury of three different models
@@ -88,6 +88,7 @@ Environment variables (in `.env`):
 | --- | --- |
 | `AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION` | Bedrock access for the model |
 | `SCANNER_MODEL_ID` | Optional. Overrides the default model, Amazon Nova Lite (`us.amazon.nova-lite-v1:0`) |
+| `SCANNER_TIME_LIMIT_SECONDS`, `SCANNER_MAX_MODEL_CALLS` | Optional. Per-scan limits, default 120 seconds and 20 model calls. A scan that hits either ends as `unscannable` |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | Tracing to Langfuse (optional: leave unset to run without tracing) |
 
 Tests (no network, no model calls):
