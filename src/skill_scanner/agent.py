@@ -4,10 +4,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from strands import Agent, tool
+from strands.hooks import BeforeModelCallEvent
 from strands.models import BedrockModel
+from strands.types.exceptions import StructuredOutputException
 
 from skill_scanner import tools
-from skill_scanner.scanner import Unscannable, scan
+from skill_scanner.scanner import ModelCallBudget, Unscannable, scan
 from skill_scanner.schema import Verdict
 
 load_dotenv()
@@ -95,7 +97,21 @@ def scan_skill(path: str, verbose: bool = False, model_id: str | None = None) ->
         model_id = model_id or os.getenv("SCANNER_MODEL_ID") or DEFAULT_MODEL_ID
         skill_tools, problems = make_tools(path)
         agent = Agent(name="skill-scanner", model=BedrockModel(model_id=model_id), system_prompt=SYSTEM_PROMPT, tools=skill_tools, **kwargs)
-        result = agent("Scan this skill folder. Start with list_files.", structured_output_model=Verdict)
+        budget = ModelCallBudget()
+
+        def count_model_call(event: BeforeModelCallEvent) -> None:
+            try:
+                budget.use()
+            except Unscannable as reason:
+                problems.append(reason)
+                event.cancel = str(reason)  # the model is not called; the scan is failed below
+
+        agent.add_hook(count_model_call)
+        try:
+            result = agent("Scan this skill folder. Start with list_files.", structured_output_model=Verdict)
+        except StructuredOutputException as failure:
+            if not problems:
+                raise Unscannable(f"the model did not give a valid answer: {failure}") from failure
 
     if problems:
         raise problems[0]  # a skill we could not fully read is never given a verdict

@@ -1,4 +1,8 @@
-from skill_scanner.scanner import Unscannable, scan
+import threading
+
+import pytest
+
+from skill_scanner.scanner import ModelCallBudget, Unscannable, scan
 from skill_scanner.schema import ScanResult, Verdict
 
 BENIGN = Verdict(verdict="benign", category=None, confidence=0.9, evidence=[], reasoning="Formats commit messages.")
@@ -137,3 +141,47 @@ def test_mac_and_git_junk_does_not_stop_a_skill_from_being_scanned(tmp_path):
 
     assert result.status == "scanned"
     assert model.calls == 1
+
+
+def test_an_answer_that_fails_validation_ends_as_unscannable_not_a_crash(tmp_path):
+    (tmp_path / "SKILL.md").write_text("hello")
+
+    def bad_answer(folder):
+        # A benign verdict with a category is not allowed, so this raises a ValidationError.
+        return Verdict(verdict="benign", category="data-exfiltration", confidence=0.9, evidence=[], reasoning="x")
+
+    result = scan(str(tmp_path), analyze=bad_answer)
+
+    assert result.status == "unscannable"
+    assert result.verdict is None
+    assert "invalid answer" in result.error
+
+
+def test_a_scan_that_takes_too_long_ends_as_unscannable_with_the_reason(tmp_path):
+    (tmp_path / "SKILL.md").write_text("hello")
+    release = threading.Event()
+
+    def stalls(folder):
+        release.wait(timeout=5)  # stands in for a model that never answers
+        return BENIGN
+
+    try:
+        result = scan(str(tmp_path), analyze=stalls, time_limit_seconds=0.2)
+    finally:
+        release.set()
+
+    assert result.status == "unscannable"
+    assert result.verdict is None
+    assert "time limit" in result.error
+
+
+def test_the_model_call_budget_stops_a_loop_that_keeps_asking(tmp_path):
+    budget = ModelCallBudget(max_calls=3)
+    calls = 0
+
+    with pytest.raises(Unscannable, match="model call limit"):
+        while True:  # stands in for an agent that keeps retrying a rejected answer
+            budget.use()
+            calls += 1
+
+    assert calls == 3
